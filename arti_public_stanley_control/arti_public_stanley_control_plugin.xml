@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<library path="lib/libarti_public_stanley_control">
+  <class name="arti_public_stanley_control/StanleyControlPathFollower"
+         type="arti_public_stanley_control::StanleyControlPathFollower"
+         base_class_type="arti_nav_core::BasePathFollower">
+    <description>
+      Stanley control path follower
+    </description>
+  </class>
+
+  <class name="arti_public_stanley_control/StanleyControlPathFollower"
+         type="arti_public_stanley_control::StanleyControlPathFollowerAckermann"
+         base_class_type="arti_nav_core::BasePathFollowerAckermann">
+    <description>
+      Stanley control path follower
+    </description>
+  </class>
+</library>
