@@ -1,10 +1,12 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>arti_public_stanley_control</name>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
   <description>The arti_public_stanley_control package</description>
 
   <maintainer email="k.ml@arti-robots.com">Konstantin Mautner-Lassnig</maintainer>
+  <maintainer email="r.hoheneder@arti-robots.com">Raphael Hoheneder</maintainer>
+  <maintainer email="f.hiermann@arti-robots.com">Fabian Hiermann</maintainer>
 
   <license>BSD</license>
 

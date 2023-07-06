@@ -117,6 +117,8 @@ protected:
     const arti_nav_core_msgs::Pose2DWithLimits& a, const arti_nav_core_msgs::Pose2DWithLimits& b);
   static std_msgs::Float32 makeFloat32(std_msgs::Float32::_data_type data);
 
+  void updateStopMovementIndex();
+
   ros::NodeHandle private_nh_;
   arti_nav_core::Transformer* transformer_;
 
@@ -145,6 +147,7 @@ protected:
   arti_nav_core_msgs::Trajectory2DWithLimits current_trajectory_;
   size_t current_segment_index_{0};
   double current_position_in_segment_{0.0};
+  size_t stop_movement_index_{0};
 
   double goal_distance_{std::numeric_limits<double>::max()};
   ros::Time last_valid_velocity_time_{0};

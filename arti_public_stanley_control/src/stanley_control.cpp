@@ -74,6 +74,24 @@ bool StanleyControl::setTrajectory(const arti_nav_core_msgs::Trajectory2DWithLim
 
   last_valid_velocity_time_ = ros::Time::now();
 
+  stop_movement_index_ = 0;
+  updateStopMovementIndex();
+  // properly initialize the current segment index, current position in segment and if the goal is actually already reached
+  const boost::optional<State> optional_state = getState();
+  if (!optional_state)
+  {
+    ROS_ERROR_STREAM("cannot set trajectory without a recent input pose");
+    return false;
+  }
+  const State state = optional_state.value();
+
+  const TrajectoryPosition base_position
+    = determineTrajectoryPosition(0, 0, state.x, state.y);
+
+  current_segment_index_ = base_position.segment_index;
+  current_position_in_segment_ = base_position.parallel_distance;
+  goal_reached_ = isGoalReached();
+
   return true;
 }
 
@@ -223,7 +241,8 @@ bool StanleyControl::isGoalReached()
   }
   const State state = optional_state.value();
 
-  const arti_nav_core_msgs::Pose2DWithLimits& goal_pose = current_trajectory_.movements.back().pose;
+  const arti_nav_core_msgs::Pose2DWithLimits& goal_pose = current_trajectory_.movements.at(stop_movement_index_).pose;
+
   bool losing_goal = false;
 
   const double current_goal_distance = std::hypot(state.x - goal_pose.point.x.value,
@@ -305,6 +324,22 @@ bool StanleyControl::isGoalReached()
 
   if (reached_x_ && reached_y_ && reached_theta_)
   {
+
+    // When an intermediate goal is reached, we need to set the current_segment_index_ and current_position_in_segment_ again
+    // with the starting index at the previous stopping index because otherwise in some special cases we are not setting
+    // the next target to the target *after* the previous stopping index but just exactly to the stopping index which means that
+    // we are still driving towards the previous stopping index.
+    auto previous_stopping_index = stop_movement_index_;
+
+    updateStopMovementIndex();
+
+    const TrajectoryPosition base_position
+      = determineTrajectoryPosition(std::min(previous_stopping_index, current_trajectory_.movements.size() - 1),
+                                    0.0, state.x, state.y);
+
+    current_segment_index_ = base_position.segment_index;
+    current_position_in_segment_ = base_position.parallel_distance;
+
     path_processing_ = false;
     goal_reached_ = true;
   }
@@ -711,5 +746,46 @@ void StanleyControl::setVelocity(boost::optional<arti_nav_core_msgs::Trajectory2
     }
   }
 }
+void StanleyControl::updateStopMovementIndex()
+{
+  const arti_nav_core_msgs::Movement2DWithLimits* prev_movement
+    = &current_trajectory_.movements.at(stop_movement_index_);
 
+  // to get around a false positive compiler warning we need to set an uninitialized boost value in that way:
+  // https://www.boost.org/doc/libs/1_65_1/libs/optional/doc/html/boost_optional/tutorial/gotchas/false_positive_with__wmaybe_uninitialized.html
+  boost::optional<bool> is_currently_reverse_driving = boost::make_optional(false, bool());
+  if (prev_movement->twist.x.value != 0)
+  {
+    is_currently_reverse_driving = std::signbit(prev_movement->twist.x.value);
+    ROS_DEBUG_STREAM("Set is_currently_reverse_driving to " << std::signbit(prev_movement->twist.x.value));
+  }
+
+  for (size_t i = stop_movement_index_ + 1; i < current_trajectory_.movements.size(); ++i)
+  {
+    // Check whether we have to subdivide the trajectory because of orientation or direction changes:
+    const arti_nav_core_msgs::Movement2DWithLimits& movement = current_trajectory_.movements.at(i);
+
+    if (!is_currently_reverse_driving.is_initialized() && movement.twist.x.value != 0)
+    {
+      is_currently_reverse_driving = std::signbit(movement.twist.x.value);
+      ROS_DEBUG_STREAM("Set is_currently_reverse_driving to " << std::signbit(movement.twist.x.value));
+    }
+
+    const double dtheta = angles::normalize_angle(movement.pose.theta.value - prev_movement->pose.theta.value);
+
+    if ((std::isfinite(dtheta) && std::abs(dtheta) > angles::from_degrees(cfg_.yaw_maximum_change)) ||
+        (movement.twist.x.value != 0 && is_currently_reverse_driving.is_initialized() && (*is_currently_reverse_driving) != std::signbit(movement.twist.x.value)))
+    {
+      ROS_DEBUG_STREAM("Detected different direction at index " << i << " (= new stop_movement_index_)" << std::endl <<
+                                                                "prev_movement: " << std::endl << *prev_movement << std::endl <<
+                                                                "movement: " << std::endl << movement << std::endl <<
+                                                                "current driving direction: " << (is_currently_reverse_driving.is_initialized() ? ((*is_currently_reverse_driving) ? "reverse" : "forward") : "not set"));
+      stop_movement_index_ = i;
+      return;
+    }
+    prev_movement = &movement;
+  }
+  stop_movement_index_ = current_trajectory_.movements.size() - 1;
+  ROS_DEBUG_STREAM("Set stop movement index to " << stop_movement_index_);
+}
 }
