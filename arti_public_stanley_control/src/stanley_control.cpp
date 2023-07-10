@@ -758,9 +758,9 @@ void StanleyControl::setVelocity(boost::optional<arti_nav_core_msgs::Trajectory2
     {
       m_next = &trajectory_tfd->movements.at(i - 1);
     }
-    bool isForward = isForwardSegment(m.pose, m_next.pose);
+    bool isForward = isForwardSegment(m.pose, m_next->pose);
     //in case m_next is actually the second to last movement, it is inverted
-    isForward = ((i + 1) < trajectory_tfd.movements.size()) ? isForward : !isForward;
+    isForward = ((i + 1) < trajectory_tfd->movements.size()) ? isForward : !isForward;
     const bool reverse = cfg_.enable_reverse_driving && !isForward;
     if (!std::isfinite(m.twist.x.value))
     {
