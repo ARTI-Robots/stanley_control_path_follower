@@ -91,7 +91,10 @@ bool StanleyControl::setTrajectory(const arti_nav_core_msgs::Trajectory2DWithLim
   current_segment_index_ = base_position.segment_index;
   current_position_in_segment_ = base_position.parallel_distance;
   goal_reached_ = isGoalReached();
-
+  if(goal_reached_)
+  {
+    ROS_WARN("Goal reached in setTrajectory");
+  }
   return true;
 }
 
@@ -256,7 +259,7 @@ bool StanleyControl::isGoalReached()
   goal_distance_publisher_.publish(makeFloat32(static_cast<std_msgs::Float32::_data_type>(current_goal_distance)));
 
   // check if we are loosing the goal - stop driving if this happens
-  if ((current_segment_index_ + 2) >= current_trajectory_.movements.size())
+  if ((current_segment_index_ + 1) >= stop_movement_index_)
   {
     // TODO THIS IS NEVER REACHED!?
 
@@ -324,24 +327,41 @@ bool StanleyControl::isGoalReached()
 
   if (reached_x_ && reached_y_ && reached_theta_)
   {
+    const bool is_goal = (stop_movement_index_ + 1) >= current_trajectory_.movements.size();
+    ROS_DEBUG_STREAM("is_goal: " << is_goal <<
+                                 " (stop_movement_index_: " << stop_movement_index_ <<
+                                 "; current_trajectory_.movements.size(): " << current_trajectory_.movements.size() << ")");
 
-    // When an intermediate goal is reached, we need to set the current_segment_index_ and current_position_in_segment_ again
-    // with the starting index at the previous stopping index because otherwise in some special cases we are not setting
-    // the next target to the target *after* the previous stopping index but just exactly to the stopping index which means that
-    // we are still driving towards the previous stopping index.
-    auto previous_stopping_index = stop_movement_index_;
+    if (is_goal)
+    {
+      path_processing_ = false;
+      goal_reached_ = true;
+    }
+    else
+    {
+      goal_distance_ = std::numeric_limits<double>::max();
+      //goal_theta_diff_ = std::numeric_limits<double>::max();
+      reached_x_ = false;
+      reached_y_ = false;
+      reached_theta_ = false;
+      goal_reached_ = false;
+      // When an intermediate goal is reached, we need to set the current_segment_index_ and current_position_in_segment_ again
+      // with the starting index at the previous stopping index because otherwise in some special cases we are not setting
+      // the next target to the target *after* the previous stopping index but just exactly to the stopping index which means that
+      // we are still driving towards the previous stopping index.
+      auto previous_stopping_index = stop_movement_index_;
+      ROS_WARN("updateStop movement index from currently [%zu]", stop_movement_index_);
+      updateStopMovementIndex();
+      ROS_WARN("After updateStopMovement index  [%zu]", stop_movement_index_);
 
-    updateStopMovementIndex();
+      const TrajectoryPosition base_position
+        = determineTrajectoryPosition(std::min(previous_stopping_index, current_trajectory_.movements.size() - 1),
+                                      0.0, state.x, state.y);
 
-    const TrajectoryPosition base_position
-      = determineTrajectoryPosition(std::min(previous_stopping_index, current_trajectory_.movements.size() - 1),
-                                    0.0, state.x, state.y);
+      current_segment_index_ = base_position.segment_index;
+      current_position_in_segment_ = base_position.parallel_distance;
+    }
 
-    current_segment_index_ = base_position.segment_index;
-    current_position_in_segment_ = base_position.parallel_distance;
-
-    path_processing_ = false;
-    goal_reached_ = true;
   }
 
   return goal_reached_;
@@ -738,7 +758,10 @@ void StanleyControl::setVelocity(boost::optional<arti_nav_core_msgs::Trajectory2
     {
       m_next = &trajectory_tfd->movements.at(i - 1);
     }
-    bool reverse = cfg_.enable_reverse_driving && !isForwardSegment(m.pose, m_next->pose);
+    bool isForward = isForwardSegment(m.pose, m_next.pose);
+    //in case m_next is actually the second to last movement, it is inverted
+    isForward = ((i + 1) < trajectory_tfd.movements.size()) ? isForward : !isForward;
+    const bool reverse = cfg_.enable_reverse_driving && !isForward;
     if (!std::isfinite(m.twist.x.value))
     {
       // This means there is no velocity set point or limit, so we default to the maximum velocity:
